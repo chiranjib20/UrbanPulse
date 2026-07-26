@@ -1,0 +1,82 @@
+digraph UrbanPulse {
+  rankdir=TB;
+  splines=ortho;
+  nodesep=0.45;
+  ranksep=0.65;
+  fontname="Helvetica";
+  node [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", color="#2b3a55", fontcolor="#1a1a1a"];
+  edge [fontname="Helvetica", fontsize=9, color="#556080", fontcolor="#333333"];
+
+  labelloc="t";
+  label="UrbanPulse -- Real-Time Urban Operations Intelligence Platform\n(MetroConnect Smart City)";
+  fontsize=16;
+  fontname="Helvetica-Bold";
+
+  subgraph cluster_sources {
+    label="1. Data Sources (Edge)";
+    style="rounded"; color="#8a8a8a"; fontsize=12;
+    bgcolor="#f4f6fb";
+    gps   [label="Bus GPS Trackers\n12,000 units | ~2,400 ev/s"];
+    sig   [label="Traffic Signal Sensors\n3,800 units | ~380 ev/s"];
+    aqi   [label="Air Quality Monitors\n600 units | ~60 ev/s"];
+    meter [label="Smart Electricity Meters\n1.1M units | ~1,100 ev/s"];
+  }
+
+  subgraph cluster_ingest {
+    label="2. Ingestion Layer";
+    style="rounded"; color="#8a8a8a"; fontsize=12;
+    bgcolor="#eef3fb";
+    kafka [label="Apache Kafka Cluster (3 brokers)\nTopics: bus_gps | traffic_signals |\nair_quality | smart_meters | dlq", fillcolor="#c9d9f5"];
+  }
+
+  subgraph cluster_process {
+    label="3. Processing Layer";
+    style="rounded"; color="#8a8a8a"; fontsize=12;
+    bgcolor="#eefaf0";
+    flink   [label="Apache Flink\n(Speed Layer)\nAQI emergency | gridlock |\nbus-bunching detection", fillcolor="#c8ecd0"];
+    kstreams[label="Kafka Streams\nGPS x Route-Schedule\nenrichment join", fillcolor="#c8ecd0"];
+    spark_s [label="Spark Structured Streaming\n15-min ward energy windows |\nrolling AQI advisories", fillcolor="#c8ecd0"];
+    spark_b [label="Spark Batch (Nightly)\n(Batch Layer)\nCouncillor / state\ncompliance aggregates", fillcolor="#fde9c8"];
+  }
+
+  subgraph cluster_storage {
+    label="4. Storage Layer";
+    style="rounded"; color="#8a8a8a"; fontsize=12;
+    bgcolor="#fbf0ee";
+    ts_db   [label="TimescaleDB\n(time-series: AQI, energy\nreadings, continuous aggregates)", fillcolor="#f5cfc9"];
+    geo_db  [label="PostgreSQL + PostGIS\n(geospatial: live + historical\nbus positions, route geometry)", fillcolor="#f5cfc9"];
+    lake    [label="MinIO (S3-compatible)\nParquet Data Lake\n(historical AQI, raw event archive,\nRPO<15min replication)", fillcolor="#f5cfc9"];
+    olap    [label="ClickHouse\n(OLAP warehouse:\ncouncillor report aggregates)", fillcolor="#f5cfc9"];
+  }
+
+  subgraph cluster_serving {
+    label="5. Serving Layer";
+    style="rounded"; color="#8a8a8a"; fontsize=12;
+    bgcolor="#f7f0fb";
+    dash   [label="Grafana / Superset\nLive Ops Dashboard\n(ward officers)", fillcolor="#e3cdf2"];
+    api    [label="Health Advisory API\n(REST, public + agency apps)", fillcolor="#e3cdf2"];
+    signal [label="Signal Control Interface\n(adaptive junction actuation)", fillcolor="#e3cdf2"];
+    report [label="Councillor Reporting Portal\n(scheduled PDF exports)", fillcolor="#e3cdf2"];
+  }
+
+  gps -> kafka; sig -> kafka; aqi -> kafka; meter -> kafka;
+
+  kafka -> flink;
+  kafka -> kstreams;
+  kafka -> spark_s;
+  kafka -> spark_b [style=dashed, label="hourly/daily pull"];
+
+  flink -> ts_db [label="AQI alerts"];
+  flink -> signal [label="gridlock/AQI\nincidents"];
+  kstreams -> geo_db [label="enriched\nETA stream"];
+  kstreams -> api [label="ETA feed"];
+  spark_s -> ts_db [label="energy summary"];
+  spark_s -> api [label="advisories"];
+  spark_b -> lake;
+  spark_b -> olap;
+
+  lake -> olap [style=dashed, label="ETL rollup"];
+  ts_db -> dash;
+  geo_db -> dash;
+  olap -> report;
+}
